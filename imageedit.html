@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixed Size Image Editor Canvas</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Define fixed canvas size and color, centered on screen */
+        #editor-canvas {
+            width: 720px; /* Fixed width as requested */
+            height: 920px; /* Fixed height as requested */
+            background-color: #F1F1F1; /* Fixed color as requested */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            
+            /* CRITICAL: Set position relative for absolute positioning of the guides */
+            position: relative; 
+            
+            /* CRITICAL: Center the image (content) using Flexbox */
+            display: flex;
+            align-items: center; /* Centers content vertically (up/down) */
+            justify-content: center; /* Centers content horizontally (left/right) */
+            overflow: hidden; /* Important to keep image within bounds */
+        }
+
+        /* Basic styling for the image within the canvas */
+        #added-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain; 
+            /* Added transition for smooth scaling */
+            transition: opacity 0.3s ease-in-out, transform 0.2s; 
+            opacity: 0; /* Initially hidden */
+            z-index: 5; /* Ensure image sits below the guides */
+            transform-origin: center center; /* Ensure scaling happens from the center */
+        }
+        
+        /* Ensures the whole editor area is centered and handles responsiveness */
+        .editor-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1rem;
+            min-height: 100vh;
+            background-color: #e5e7eb; /* Light gray background for the whole page */
+        }
+
+        /* Styling for the custom file input button (Primary) */
+        .custom-file-input {
+            background-image: linear-gradient(to right, #6366f1, #3b82f6);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            font-weight: 600;
+        }
+
+        /* Styling for the save button (Secondary/Success) */
+        #save-image {
+            background-image: linear-gradient(to right, #10b981, #059669);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            font-weight: 600;
+        }
+        
+        /* Hover effects for buttons */
+        .custom-file-input:hover, #save-image:hover, #toggle-guides:hover {
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+        }
+        .custom-file-input:active, #save-image:active, #toggle-guides:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+
+        /* --- Center Guide Styles --- */
+        .center-guide {
+            position: absolute;
+            background-color: rgba(255, 0, 0, 0.5); /* Semi-transparent red line */
+            transition: opacity 0.3s;
+            opacity: 0;
+            pointer-events: none; /* Allows interaction with the image beneath */
+            z-index: 10; /* Always above the image */
+            border-radius: 9999px;
+        }
+        #horizontal-guide {
+            width: 100%;
+            height: 2px;
+            top: 50%; 
+            transform: translateY(-50%); /* Centers the 2px line perfectly */
+        }
+        #vertical-guide {
+            height: 100%;
+            width: 2px;
+            left: 50%;
+            transform: translateX(-50%); /* Centers the 2px line perfectly */
+        }
+        .guide-visible {
+            opacity: 1;
+        }
+
+    </style>
+</head>
+<body class="font-sans antialiased bg-gray-100">
+
+    <div class="editor-container">
+        <!-- Title and Instructions -->
+        <h1 class="text-3xl font-bold text-gray-800 mb-2 mt-4">Image Editor Sadhyarshi</h1>
+        <p class="text-gray-600 mb-6">Canvas size: 720px x 920px | Background: #F1F1F1</p>
+
+        <!-- Control Buttons and Slider -->
+        <div class="flex flex-col items-center space-y-4 mb-8 w-full max-w-lg">
+            
+            <div class="flex space-x-4">
+                <label for="fileInput" class="custom-file-input flex items-center">
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Add Image to Canvas
+                </label>
+                <input type="file" id="fileInput" accept="image/*" class="hidden">
+                
+                <button id="toggle-guides" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-full shadow-md transition duration-150 flex items-center">
+                    <svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+                    Show Center Guides
+                </button>
+            </div>
+            
+            <!-- Save Button and Scale Control (in a separate row for better layout) -->
+            <div class="flex items-center space-x-4 w-full justify-center">
+                <button id="save-image" class="flex items-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Save Image (PNG)
+                </button>
+                
+                <!-- Scale/Zoom Control -->
+                <div id="scale-control" class="flex items-center space-x-3 bg-white p-3 rounded-full shadow-lg border border-gray-200 w-full hidden">
+                    <span class="text-sm font-medium text-gray-700 whitespace-nowrap">Scale:</span>
+                    <input type="range" id="scale-slider" min="0.1" max="1.0" value="0.8" step="0.01" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    <span id="scale-value" class="text-sm font-bold text-indigo-600 w-10 text-right">80%</span>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- Image Editing Canvas Area (Fixed Size) -->
+        <div id="editor-canvas" class="rounded-xl">
+            <!-- Center Guides - Placed absolutely and centered via CSS -->
+            <div id="horizontal-guide" class="center-guide"></div>
+            <div id="vertical-guide" class="center-guide"></div>
+            
+            <img id="added-image" src="" alt="Added Image" class="rounded-lg">
+            
+            <p id="placeholder-text" class="text-gray-400 text-lg select-none">
+                Canvas Ready (720x920)
+            </p>
+        </div>
+
+        <!-- Optional Status Message -->
+        <div id="status-message" class="mt-4 p-2 text-sm text-gray-600"></div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const CANVAS_WIDTH = 720;
+            const CANVAS_HEIGHT = 920;
+            const BACKGROUND_COLOR = '#F1F1F1';
+
+            const fileInput = document.getElementById('fileInput');
+            const addedImage = document.getElementById('added-image');
+            const placeholderText = document.getElementById('placeholder-text');
+            const statusMessage = document.getElementById('status-message');
+            const saveButton = document.getElementById('save-image');
+            
+            const toggleGuidesButton = document.getElementById('toggle-guides');
+            const horizontalGuide = document.getElementById('horizontal-guide');
+            const verticalGuide = document.getElementById('vertical-guide');
+
+            const scaleControl = document.getElementById('scale-control');
+            const scaleSlider = document.getElementById('scale-slider');
+            const scaleValueSpan = document.getElementById('scale-value');
+            
+            let guidesVisible = false;
+            let currentScale = 0.8; // Default scale is now 80%
+
+            // Function to apply the CSS scale transformation
+            const applyScale = (scale) => {
+                addedImage.style.transform = `scale(${scale})`;
+                scaleValueSpan.textContent = `${(scale * 100).toFixed(0)}%`;
+                currentScale = scale;
+            };
+
+            // Listener for the scale slider
+            scaleSlider.addEventListener('input', (event) => {
+                const newScale = parseFloat(event.target.value);
+                applyScale(newScale);
+                statusMessage.textContent = `Image scaled to ${(newScale * 100).toFixed(0)}%.`;
+            });
+
+
+            // Logic to toggle the center crosshair guides
+            toggleGuidesButton.addEventListener('click', () => {
+                guidesVisible = !guidesVisible;
+                const svgShow = '<svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg> Show Center Guides';
+                const svgHide = '<svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg> Hide Center Guides';
+
+                if (guidesVisible) {
+                    horizontalGuide.classList.add('guide-visible');
+                    verticalGuide.classList.add('guide-visible');
+                    toggleGuidesButton.innerHTML = svgHide;
+                } else {
+                    horizontalGuide.classList.remove('guide-visible');
+                    verticalGuide.classList.remove('guide-visible');
+                    toggleGuidesButton.innerHTML = svgShow;
+                }
+            });
+
+            // --- SAVE IMAGE FUNCTION ---
+            saveButton.addEventListener('click', () => {
+                if (!addedImage.src) {
+                    statusMessage.textContent = 'Please load an image first before saving.';
+                    return;
+                }
+                
+                statusMessage.textContent = 'Preparing image for download...';
+
+                // 1. Create a temporary canvas
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = CANVAS_WIDTH;
+                canvas.height = CANVAS_HEIGHT;
+
+                // 2. Fill the background color
+                ctx.fillStyle = BACKGROUND_COLOR;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // 3. Get image dimensions (unscaled)
+                const W_nat = addedImage.naturalWidth;
+                const H_nat = addedImage.naturalHeight;
+
+                // 4. Determine fit-size (the size the image would be at scale 1.0)
+                let W_fit, H_fit;
+                const R_img = W_nat / H_nat;
+                const R_can = CANVAS_WIDTH / CANVAS_HEIGHT;
+
+                if (R_img > R_can) {
+                    // Image is wider than canvas ratio, constrained by width
+                    W_fit = CANVAS_WIDTH;
+                    H_fit = W_fit / R_img;
+                } else {
+                    // Image is taller than canvas ratio, constrained by height
+                    H_fit = CANVAS_HEIGHT;
+                    W_fit = H_fit * R_img;
+                }
+
+                // 5. Apply the user's current scale (e.g., 0.8)
+                const W_final = W_fit * currentScale;
+                const H_final = H_fit * currentScale;
+
+                // 6. Calculate position to center the final scaled image
+                const X_start = (CANVAS_WIDTH - W_final) / 2;
+                const Y_start = (CANVAS_HEIGHT - H_final) / 2;
+
+                // 7. Draw the image onto the canvas at the calculated final position and size
+                ctx.drawImage(addedImage, X_start, Y_start, W_final, H_final);
+
+                // 8. Convert canvas to a downloadable data URL
+                const dataURL = canvas.toDataURL('image/png');
+                
+                // 9. Trigger download using a temporary anchor element
+                const a = document.createElement('a');
+                a.href = dataURL;
+                a.download = 'edited_image_720x920.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                statusMessage.textContent = 'Image saved successfully!';
+            });
+
+
+            // Function to handle image loading
+            fileInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+
+                if (file) {
+                    statusMessage.textContent = 'Loading image...';
+                    saveButton.disabled = true; // Disable save while loading
+                    
+                    const reader = new FileReader();
+
+                    reader.onload = function(e) {
+                        try {
+                            placeholderText.classList.add('hidden');
+                            scaleControl.classList.remove('hidden');
+                            addedImage.src = e.target.result;
+                            
+                            addedImage.onload = () => {
+                                addedImage.style.opacity = 1;
+                                
+                                // Reset and apply default scale (0.8)
+                                currentScale = 0.8; 
+                                scaleSlider.value = currentScale;
+                                applyScale(currentScale);
+
+                                statusMessage.textContent = `Image loaded, centered, and scaled to ${scaleValueSpan.textContent}. Ready to save!`;
+                                saveButton.disabled = false; // Enable save button
+                                
+                                // Flash guides briefly for confirmation
+                                if (!guidesVisible) {
+                                    horizontalGuide.classList.add('guide-visible');
+                                    verticalGuide.classList.add('guide-visible');
+                                    setTimeout(() => {
+                                        horizontalGuide.classList.remove('guide-visible');
+                                        verticalGuide.classList.remove('guide-visible');
+                                    }, 1500); 
+                                }
+                            };
+                            
+                            // Error handling
+                            addedImage.onerror = () => {
+                                console.error('Error loading image into canvas.');
+                                statusMessage.textContent = 'Failed to load image.';
+                                placeholderText.classList.remove('hidden');
+                                scaleControl.classList.add('hidden');
+                                addedImage.style.opacity = 0;
+                            };
+
+                        } catch (error) {
+                            console.error('File reading error:', error);
+                            statusMessage.textContent = 'An error occurred during file processing.';
+                            placeholderText.classList.remove('hidden');
+                            scaleControl.classList.add('hidden');
+                            addedImage.style.opacity = 0;
+                        }
+                    };
+
+                    reader.onerror = function(e) {
+                        console.error('FileReader error:', e);
+                        statusMessage.textContent = 'Error reading file.';
+                        placeholderText.classList.remove('hidden');
+                        scaleControl.classList.add('hidden');
+                    };
+
+                    reader.readAsDataURL(file);
+
+                } else {
+                    statusMessage.textContent = 'Please select an image file.';
+                    scaleControl.classList.add('hidden');
+                    saveButton.disabled = true;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
